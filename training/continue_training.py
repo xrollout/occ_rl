@@ -9,11 +9,13 @@ import os
 import sys
 import torch
 import numpy as np
+import argparse
 
-sys.path.insert(0, '/Users/bobinding/Documents/robot/xrollout')
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from occupancy_grid_rl.envs import OccupancyGridEnv
-from occupancy_grid_rl.training.train_ppo_custom import (
+from envs import OccupancyGridEnv
+from training.train_ppo_custom import (
     ActorCriticPolicy, collect_rollouts, compute_gae
 )
 import torch.optim as optim
@@ -158,4 +160,20 @@ def continue_training(
     print(f"Mean Reward: {eval_stats['mean_reward']:.2f}")
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Continue training from checkpoint')
+    parser.add_argument('--checkpoint', type=str, default='./ppo_training_output/final_model.pt',
+                      help='Path to checkpoint to continue from')
+    parser.add_argument('--additional-timesteps', type=int, default=700000,
+                      help='Additional timesteps to train (300k + 700k = 1M)')
+    parser.add_argument('--output-dir', type=str, default='./ppo_training_output_1m',
+                      help='Output directory for new checkpoints')
+    parser.add_argument('--device', type=str, default='cpu',
+                      help='Device to use for training')
+    args = parser.parse_args()
+
+    continue_training(
+        checkpoint_path=args.checkpoint,
+        additional_timesteps=args.additional_timesteps,
+        output_dir=args.output_dir,
+        device_str=args.device
+    )

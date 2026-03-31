@@ -26,10 +26,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Normal
 
-# Add parent directory to path
+# Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from occupancy_grid_rl.envs import OccupancyGridEnv
+from envs import OccupancyGridEnv
 
 
 @dataclass
