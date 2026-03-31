@@ -18,8 +18,8 @@ import imageio
 
 sys.path.insert(0, '/Users/bobinding/Documents/robot/xrollout')
 
-from occupancy_grid_rl.envs import OccupancyGridEnv
-from occupancy_grid_rl.training.train_ppo_custom import ActorCriticPolicy
+from envs import OccupancyGridEnv
+from training.train_ppo_custom import ActorCriticPolicy
 
 def load_policy(checkpoint_path, device='cpu'):
     """Load trained policy from checkpoint."""

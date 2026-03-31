@@ -22,6 +22,7 @@ from tqdm import tqdm
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from envs import OccupancyGridEnv
 from training.train_ppo_custom import ActorCriticPolicy
 from llm_teacher.llm_teacher import LLMTeacher
@@ -76,11 +77,11 @@ class DemonstrationDataset(Dataset):
         self.dones = torch.FloatTensor(data['dones'])
 
         # Precompute reward-to-go for value function training
-        self.reward_to_go = self._compute_reward_to-go(self.rewards, self.dones)
+        self.reward_to_go = self._compute_reward_togo(self.rewards, self.dones)
 
         print(f"Loaded dataset: {len(self)} transitions")
 
-    def _compute_reward_to-go(self, rewards: torch.Tensor, dones: torch.Tensor) -> torch.Tensor:
+    def _compute_reward_togo(self, rewards: torch.Tensor, dones: torch.Tensor) -> torch.Tensor:
         """Compute reward-to-go (discounted sum of future rewards) from trajectory."""
         n = len(rewards)
         rtg = torch.zeros_like(rewards)
@@ -210,7 +211,7 @@ def add_dagger_data(
     current_dataset.actions = torch.cat([current_dataset.actions, new_actions], dim=0)
     current_dataset.rewards = torch.cat([current_dataset.rewards, new_rewards], dim=0)
     current_dataset.dones = torch.cat([current_dataset.dones, new_dones], dim=0)
-    current_dataset.reward_to_go = current_dataset._compute_reward_to-go(current_dataset.rewards, current_dataset.dones)
+    current_dataset.reward_to_go = current_dataset._compute_reward_togo(current_dataset.rewards, current_dataset.dones)
 
     print(f"[DAgger] Dataset now has {len(current_dataset)} total transitions")
     return current_dataset

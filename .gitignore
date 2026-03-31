@@ -1,3 +1,7 @@
+checkpoints
+.env
+data
+*.egg-info
 __pycache__
 log
 ppo_training_output*

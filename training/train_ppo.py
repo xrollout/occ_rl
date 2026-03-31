@@ -414,8 +414,8 @@ def main():
         return 1
 
     # Import custom components
-    from occupancy_grid_rl.envs import OccupancyGridEnv
-    from occupancy_grid_rl.policies.grid_nav_policy import GridNavTorchModel
+    from envs import OccupancyGridEnv
+    from policies.grid_nav_policy import GridNavTorchModel
 
     # Register custom model and environment
     ModelCatalog.register_custom_model("grid_nav_model", GridNavTorchModel)
@@ -473,7 +473,7 @@ def main():
     if args.pretrained_ckpt:
         print(f"Loading pretrained behavior cloning checkpoint: {args.pretrained_ckpt}")
         import torch
-        ckpt = torch.load(args.pretrained_ckpt, map_location='cpu')
+        ckpt = torch.load(args.pretrained_ckpt, map_location='cpu', weights_only=False)
 
         # Get the RLlib model
         policy = algo.get_policy()

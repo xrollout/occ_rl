@@ -59,6 +59,7 @@ class OccupancyGridEnv(gym.Env):
         collision_threshold: float = 0.3,
         random_seed: Optional[int] = None,
         render_mode: Optional[str] = None,
+        hard_scenario: bool = False,
     ):
         """
         Initialize the environment.
@@ -74,6 +75,8 @@ class OccupancyGridEnv(gym.Env):
             collision_threshold: Robot radius for collision checking
             random_seed: Random seed for reproducibility
             render_mode: Rendering mode ("human" or "rgb_array")
+            hard_scenario: If True, generate structured complex obstacles
+                that require detouring to reach the goal
         """
         super().__init__()
 
@@ -86,6 +89,7 @@ class OccupancyGridEnv(gym.Env):
         self.collision_threshold = collision_threshold
         self.random_seed = random_seed
         self.render_mode = render_mode
+        self.hard_scenario = hard_scenario
 
         # Create grid world
         self.grid_world = GridWorld(
@@ -96,6 +100,10 @@ class OccupancyGridEnv(gym.Env):
             num_dynamic_obstacles=num_dynamic_obstacles,
             random_seed=random_seed,
         )
+
+        # Generate hard scenario with structured obstacles if requested
+        if hard_scenario:
+            self.grid_world.generate_hard_scenario()
 
         # Create kinematics model
         self.kinematics = HolonomicKinematics(RobotConfig())
@@ -162,6 +170,10 @@ class OccupancyGridEnv(gym.Env):
         # Reset grid world
         self.grid_world.reset(randomize=True)
 
+        # If hard scenario, regenerate the obstacle layout
+        if self.hard_scenario:
+            self.grid_world.generate_hard_scenario()
+
         # Sample robot start position
         robot_pos = self.grid_world.sample_free_position(
             min_clearance=self.collision_threshold + 0.2
@@ -171,14 +183,17 @@ class OccupancyGridEnv(gym.Env):
             robot_pos = np.array([self.world_width / 2, self.world_height / 2])
 
         # Sample goal position (far from robot)
-        for _ in range(100):
+        # For hard scenarios, ensure straight-line path is blocked
+        for attempt in range(100):
             goal_pos = self.grid_world.sample_free_position(
                 min_clearance=self.collision_threshold + 0.2
             )
             if goal_pos is not None:
                 dist = np.linalg.norm(goal_pos - robot_pos)
                 if dist > 3.0:  # At least 3 meters away
-                    break
+                    # For hard scenarios, check that straight-line is blocked
+                    if not self.hard_scenario or self.grid_world.is_straight_line_blocked(robot_pos, goal_pos):
+                        break
 
         if goal_pos is None:
             # Fallback

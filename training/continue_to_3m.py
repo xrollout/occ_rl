@@ -11,8 +11,8 @@ import numpy as np
 
 sys.path.insert(0, '/Users/bobinding/Documents/robot/xrollout')
 
-from occupancy_grid_rl.envs import OccupancyGridEnv
-from occupancy_grid_rl.training.train_ppo_custom import (
+from envs import OccupancyGridEnv
+from training.train_ppo_custom import (
     ActorCriticPolicy, collect_rollouts, compute_gae
 )
 import torch.optim as optim

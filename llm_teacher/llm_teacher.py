@@ -10,7 +10,7 @@ import os
 import re
 import json
 import hashlib
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, List
 from dataclasses import dataclass
 
 import numpy as np
@@ -115,7 +115,6 @@ Just output the three values - no other explanation needed.
         Convert 32x32 occupancy grid to ASCII visualization.
 
         Robot is at center (16, 16), marked with 'R'.
-        Goal direction is marked with 'G'.
         Obstacles are 'X', free space is '.'.
 
         For display purposes, we downsample to 16x16 to keep it compact.
@@ -302,3 +301,203 @@ Output the optimal velocities vx, vy, omega to move toward the target while avoi
         # Parse action
         vx, vy, omega = self._parse_response(response_text)
         return np.array([vx, vy, omega], dtype=np.float32)
+
+    def get_action_chunk(
+        self,
+        obs: Dict[str, np.ndarray],
+        chunk_size: int,
+        use_cache: bool = True,
+    ) -> List[np.ndarray]:
+        """
+        Get a chunk of multiple actions from LLM teacher for current observation.
+
+        Args:
+            obs: Current observation dictionary.
+            chunk_size: Number of actions to plan.
+            use_cache: Whether to use cached responses (default: True).
+
+        Returns:
+            actions: List of np.ndarray, each (3,) - [vx, vy, omega].
+        """
+        # Generate cache key based on observation and chunk size
+        cache_key = self._get_cache_key(obs) + f"_{chunk_size}"
+
+        # Check cache first
+        if use_cache:
+            cached = self._get_cached_response(cache_key)
+            if cached is not None:
+                return self._parse_response_chunk(cached, chunk_size)
+
+        # Format prompt for chunked planning
+        prompt = self.format_prompt_chunked(obs, chunk_size)
+
+        # Query LLM (OpenAI API format) with retries
+        messages = [
+            {"role": "system", "content": self._get_system_prompt_chunked(chunk_size)},
+            {"role": "user", "content": prompt},
+        ]
+
+        # Retry logic for API errors (rate limits, network issues)
+        max_retries = 8
+        retry_delay = 10.0
+        response_text = None
+
+        for retry in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.config.model_name,
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    max_tokens=chunk_size * 32,
+                )
+                response_text = response.choices[0].message.content.strip()
+                break
+            except Exception as e:
+                print(f"[LLM API] Attempt {retry+1}/{max_retries} failed: {type(e).__name__}: {e}")
+                if retry < max_retries - 1:
+                    import time
+                    delay = retry_delay * (retry + 1)
+                    print(f"  Waiting {delay} seconds before retry...")
+                    time.sleep(delay)
+                else:
+                    raise
+
+        assert response_text is not None, "All API attempts failed"
+
+        # Cache the response
+        if use_cache:
+            self._cache_response(cache_key, response_text)
+
+        # Parse multiple actions
+        return self._parse_response_chunk(response_text, chunk_size)
+
+    def _get_system_prompt_chunked(self, chunk_size: int) -> str:
+        """Get the system prompt for chunked action planning."""
+        return f"""You are an expert robot navigation controller.
+Your job is to output a sequence of {chunk_size} velocity commands to guide a holonomic robot
+to a target goal while avoiding obstacles in a 2D grid world.
+
+If a straight-line path to the goal is blocked by obstacles, you must plan a detour
+around the obstacles to eventually reach the goal. Think step-by-step.
+
+The robot can move in any direction (holonomic) with velocities:
+- vx: forward/backward velocity [-0.5, 0.5] m/s
+- vy: left/right velocity [-0.5, 0.5] m/s
+- omega: rotational velocity [-90, 90] deg/s
+
+OUTPUT FORMAT (strictly follow this):
+Step 1: vx: <value>, vy: <value>, omega: <value>
+Step 2: vx: <value>, vy: <value>, omega: <value>
+...
+Step {chunk_size}: vx: <value>, vy: <value>, omega: <value>
+
+Just output the {chunk_size} steps - no other explanation needed.
+"""
+
+    def format_prompt_chunked(self, obs: Dict[str, np.ndarray], chunk_size: int) -> str:
+        """
+        Format observation into a text prompt for chunked action planning.
+
+        Args:
+            obs: Observation dictionary.
+            chunk_size: Number of steps to plan.
+
+        Returns:
+            Formatted prompt string.
+        """
+        grid = obs['occupancy_grid']
+        robot_pose = obs['robot_pose']
+        target_relative = obs['target_relative']
+        velocity = obs['velocity']
+
+        # Convert grid to ASCII
+        grid_ascii = self._grid_to_ascii(grid)
+
+        # Denormalize target relative - it's normalized to [-1, 1] in world size 10m
+        dx = target_relative[0] * 5.0
+        dy = target_relative[1] * 5.0
+        distance = np.sqrt(dx**2 + dy**2)
+
+        prompt = f"""Current state:
+
+GRID (R = robot, X = obstacle, . = free):
+{grid_ascii}
+
+Robot current position: x = {robot_pose[0]:.2f} m, y = {robot_pose[1]:.2f} m
+Robot current heading: theta = {robot_pose[2]:.2f} rad
+Target relative position: dx = {dx:.2f} m, dy = {dy:.2f} m
+Distance to target: {distance:.2f} m
+Current velocities: vx = {velocity[0]:.2f} m/s, vy = {velocity[1]:.2f} m/s, omega = {velocity[2]:.2f} deg/s
+
+If the direct path is blocked, plan a detour. Output {chunk_size} optimal velocity commands to move toward the target while avoiding obstacles:
+"""
+        return prompt
+
+    def _parse_response_chunk(self, response: str, expected_chunks: int) -> List[np.ndarray]:
+        """
+        Parse LLM response to extract multiple (vx, vy, omega) actions.
+
+        Args:
+            response: LLM response text.
+            expected_chunks: Expected number of actions.
+
+        Returns:
+            List of (vx, vy, omega) tuples as numpy arrays.
+
+        Raises:
+            ValueError: if parsing fails.
+        """
+        actions = []
+
+        # Pattern for "Step N: vx: <val>, vy: <val>, omega: <val>"
+        # Step N is in a non-capturing group, so only vx, vy, omega are captured
+        pattern = r'(?:Step\s*\d+\s*:\s*)?vx:?\s*([+-]?\d*\.?\d+)\s*[,;]?\s*vy:?\s*([+-]?\d*\.?\d+)\s*[,;]?\s*omega:?\s*([+-]?\d*\.?\d+)'
+        pattern = pattern.lower()
+
+        matches = list(re.finditer(pattern, response.lower(), re.IGNORECASE))
+
+        # If no matches with "Step" format, try just finding triples of numbers
+        if not matches:
+            # Find all floating point numbers
+            num_pattern = r'([+-]?\d*\.?\d+)'
+            numbers = re.findall(num_pattern, response)
+            nums = [float(n) for n in numbers]
+
+            # Group into triples
+            for i in range(0, len(nums) - 2, 3):
+                if len(actions) >= expected_chunks:
+                    break
+                vx, vy, omega = nums[i], nums[i+1], nums[i+2]
+                # Clip
+                vx = np.clip(vx, self.VX_MIN, self.VX_MAX)
+                vy = np.clip(vy, self.VY_MIN, self.VY_MAX)
+                omega = np.clip(omega, self.OMEGA_MIN, self.OMEGA_MAX)
+                actions.append(np.array([vx, vy, omega], dtype=np.float32))
+        else:
+            # Extract from matched steps
+            for match in matches:
+                if len(actions) >= expected_chunks:
+                    break
+                # Groups: because step is non-capturing (?:), we have 3 groups
+                vx, vy, omega = match.groups()
+                vx = float(vx)
+                vy = float(vy)
+                omega = float(omega)
+                # Clip
+                vx = np.clip(vx, self.VX_MIN, self.VX_MAX)
+                vy = np.clip(vy, self.VY_MIN, self.VY_MAX)
+                omega = np.clip(omega, self.OMEGA_MIN, self.OMEGA_MAX)
+                actions.append(np.array([vx, vy, omega], dtype=np.float32))
+
+        # If we got fewer actions than expected, repeat last action to pad
+        if len(actions) < expected_chunks:
+            if actions:
+                last = actions[-1]
+                while len(actions) < expected_chunks:
+                    actions.append(last.copy())
+            else:
+                # If we got nothing, just add zero actions
+                for _ in range(expected_chunks - len(actions)):
+                    actions.append(np.array([0.0, 0.0, 0.0], dtype=np.float32))
+
+        return actions

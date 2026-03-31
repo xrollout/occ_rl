@@ -26,6 +26,8 @@ def collect_demonstrations(
     max_episode_steps: int,
     seed: int,
     use_cache: bool,
+    difficulty: str = "easy",
+    chunk_size: int = 1,
 ) -> dict:
     """
     Collect demonstrations by running LLM policy in environment.
@@ -38,11 +40,15 @@ def collect_demonstrations(
         max_episode_steps: Maximum steps per episode.
         seed: Random seed.
         use_cache: Whether to use cached LLM responses.
+        difficulty: "easy" (random obstacles) or "hard" (structured obstacles requiring detour).
+        chunk_size: Number of actions per LLM query (1 = query every step).
+            chunk_size > 1 reduces API calls by factor of chunk_size.
 
     Returns:
         Dataset dictionary with all collected data.
     """
     # Create environment
+    hard_scenario = (difficulty == "hard")
     env = OccupancyGridEnv(
         world_width=world_size,
         world_height=world_size,
@@ -50,6 +56,7 @@ def collect_demonstrations(
         num_dynamic_obstacles=num_dynamic_obstacles,
         max_episode_steps=max_episode_steps,
         random_seed=seed,
+        hard_scenario=hard_scenario,
     )
 
     # Create LLM teacher
@@ -68,10 +75,13 @@ def collect_demonstrations(
     # Collection loop
     print(f"Collecting {num_episodes} episodes...")
     print(f"World size: {world_size}m, Obstacles: {num_static_obstacles} static + {num_dynamic_obstacles} dynamic")
+    print(f"Difficulty: {difficulty}, Chunk size: {chunk_size}")
+    print(f"Expected API calls: ~{int(num_episodes * max_episode_steps / chunk_size)} (vs {num_episodes * max_episode_steps} for chunk_size=1)")
 
     successes = 0
     collisions = 0
     total_steps = 0
+    total_api_calls = 0
 
     for episode_idx in tqdm(range(num_episodes)):
         obs, info = env.reset()
@@ -82,32 +92,70 @@ def collect_demonstrations(
         collision = False
 
         while not done and episode_steps < max_episode_steps:
-            # Get action from LLM teacher
-            action = llm_teacher.get_action(obs, use_cache=use_cache)
+            remaining_steps = max_episode_steps - episode_steps
+            current_chunk_size = min(chunk_size, remaining_steps)
 
-            # Store transition
-            all_obs_grid.append(obs['occupancy_grid'].copy())
-            all_obs_robot_pose.append(obs['robot_pose'].copy())
-            all_obs_target_relative.append(obs['target_relative'].copy())
-            all_obs_velocity.append(obs['velocity'].copy())
-            all_actions.append(action.copy())
+            if current_chunk_size > 1:
+                # Get chunk of actions from LLM teacher
+                total_api_calls += 1
+                actions = llm_teacher.get_action_chunk(obs, current_chunk_size, use_cache=use_cache)
 
-            # Step environment
-            obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
+                # Execute each action in the chunk
+                for action in actions:
+                    if done:
+                        break
 
-            all_rewards.append(reward)
-            all_dones.append(float(done))
+                    # Store transition (store the observation BEFORE executing this action)
+                    all_obs_grid.append(obs['occupancy_grid'].copy())
+                    all_obs_robot_pose.append(obs['robot_pose'].copy())
+                    all_obs_target_relative.append(obs['target_relative'].copy())
+                    all_obs_velocity.append(obs['velocity'].copy())
+                    all_actions.append(action.copy())
 
-            episode_reward += reward
-            episode_steps += 1
+                    # Step environment
+                    obs, reward, terminated, truncated, info = env.step(action)
+                    done = terminated or truncated
 
-            if info.get('success', False):
-                success = True
-                successes += 1
-            if info.get('collision', False):
-                collision = True
-                collisions += 1
+                    all_rewards.append(reward)
+                    all_dones.append(float(done))
+
+                    episode_reward += reward
+                    episode_steps += 1
+
+                    if info.get('goal_reached', False):
+                        success = True
+                        successes += 1
+                    if info.get('collision', False):
+                        collision = True
+                        collisions += 1
+            else:
+                # Single-step mode - query every step
+                total_api_calls += 1
+                action = llm_teacher.get_action(obs, use_cache=use_cache)
+
+                # Store transition
+                all_obs_grid.append(obs['occupancy_grid'].copy())
+                all_obs_robot_pose.append(obs['robot_pose'].copy())
+                all_obs_target_relative.append(obs['target_relative'].copy())
+                all_obs_velocity.append(obs['velocity'].copy())
+                all_actions.append(action.copy())
+
+                # Step environment
+                obs, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+
+                all_rewards.append(reward)
+                all_dones.append(float(done))
+
+                episode_reward += reward
+                episode_steps += 1
+
+                if info.get('goal_reached', False):
+                    success = True
+                    successes += 1
+                if info.get('collision', False):
+                    collision = True
+                    collisions += 1
 
         total_steps += episode_steps
 
@@ -136,7 +184,10 @@ def collect_demonstrations(
             'num_dynamic_obstacles': num_dynamic_obstacles,
             'max_episode_steps': max_episode_steps,
             'seed': seed,
+            'difficulty': difficulty,
+            'chunk_size': chunk_size,
             'total_transitions': total_steps,
+            'total_api_calls': total_api_calls,
             'success_rate': successes / num_episodes,
             'collision_rate': collisions / num_episodes,
             'avg_episode_length': total_steps / num_episodes,
@@ -172,6 +223,10 @@ def main():
                         help='Maximum steps per episode')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed')
+    parser.add_argument('--difficulty', type=str, default='easy', choices=['easy', 'hard'],
+                        help='Difficulty: easy = random obstacles, hard = structured obstacles requiring detour')
+    parser.add_argument('--chunk-size', type=int, default=1,
+                        help='Number of actions per LLM query (>=1). Chunking reduces API calls.')
     parser.add_argument('--output', type=str,
                         default='./data/llm_demonstrations/dataset_{seed}.npz',
                         help='Output path for dataset (.npz format)')
@@ -195,6 +250,8 @@ def main():
         max_episode_steps=args.max_episode_steps,
         seed=args.seed,
         use_cache=not args.no_cache,
+        difficulty=args.difficulty,
+        chunk_size=args.chunk_size,
     )
 
     # Save dataset

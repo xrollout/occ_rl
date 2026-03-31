@@ -15,8 +15,8 @@ import os
 import sys
 import torch
 import numpy as np
-from occupancy_grid_rl.envs import OccupancyGridEnv
-from occupancy_grid_rl.training.train_ppo_custom import (
+from envs import OccupancyGridEnv
+from training.train_ppo_custom import (
     ActorCriticPolicy, collect_rollouts, compute_gae, PPOConfig
 )
 import torch.optim as optim

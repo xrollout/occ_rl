@@ -117,10 +117,13 @@ def evaluate_policy(
                 # Track distance
                 if 'robot_position' in info:
                     curr_position = np.array(info['robot_position'])
-                    distance_traveled += np.linalg.norm(curr_position - prev_position)
-                    prev_position = curr_position
+                else:
+                    # Extract from obs['robot_pose']
+                    curr_position = np.array(obs['robot_pose'][:2])
+                distance_traveled += np.linalg.norm(curr_position - prev_position)
+                prev_position = curr_position
 
-                if info.get('success', False):
+                if info.get('goal_reached', False):
                     success = True
                     num_successes += 1
                 if info.get('collision', False):
@@ -157,7 +160,7 @@ def evaluate_policy(
 def load_policy(checkpoint_path: str, device: torch.device) -> ActorCriticPolicy:
     """Load policy from checkpoint."""
     policy = ActorCriticPolicy(action_dim=3, hidden_size=256).to(device)
-    ckpt = torch.load(checkpoint_path, map_location=device)
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     policy.load_state_dict(ckpt['policy_state_dict'])
     print(f"Loaded policy from: {checkpoint_path}")
     return policy

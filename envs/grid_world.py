@@ -186,6 +186,141 @@ class GridWorld:
                 if 0 <= i < self.grid_height and 0 <= j < self.grid_width:
                     self.occupancy_grid[i, j] = 1.0
 
+    def generate_hard_scenario(self):
+        """
+        Generate a hard navigation scenario that requires detouring around obstacles.
+
+        This method creates structured obstacle layouts where the straight-line
+        path from start to goal is guaranteed to be blocked. The robot must
+        navigate around the obstacle(s) to reach the goal.
+
+        Types of scenarios generated (randomly chosen):
+        1. Central barrier - Large horizontal barrier across the middle
+        2. U-shaped trap - U obstacle with goal inside the U
+        3. Chained corridors - Multiple obstacles forcing zig-zag
+        4. Cluttered with blocked straight-line - Random clutter that blocks direct path
+        """
+        # Clear existing static obstacles
+        self.static_obstacles = []
+        self.occupancy_grid[1:self.grid_height-1, 1:self.grid_width-1] = 0.0
+
+        scenario_type = self.rng.randint(0, 4)
+
+        if scenario_type == 0:
+            self._generate_central_barrier()
+        elif scenario_type == 1:
+            self._generate_u_shaped_trap()
+        elif scenario_type == 2:
+            self._generate_chained_corridors()
+        else:
+            self._generate_cluttered_blocked()
+
+        # Update occupancy grid for all obstacles
+        for obstacle in self.static_obstacles:
+            cells = obstacle.get_grid_cells(self.grid_resolution)
+            for i, j in cells:
+                if 0 <= i < self.grid_height and 0 <= j < self.grid_width:
+                    self.occupancy_grid[i, j] = 1.0
+
+    def _generate_central_barrier(self):
+        """Generate a large horizontal barrier across the center of the map."""
+        # Barrier across the middle, leaving openings on left and right
+        center_y = self.height / 2
+        barrier_length = self.width * 0.6
+        barrier_x_start = self.width * 0.2
+        barrier_radius = 0.6  # Width of barrier
+
+        # Place multiple obstacles to form a continuous barrier
+        num_obstacles = int(barrier_length / 1.0)
+        for i in range(num_obstacles):
+            x = barrier_x_start + i * 1.0
+            y = center_y + self.rng.uniform(-0.2, 0.2)
+            obstacle = StaticObstacle(
+                position=np.array([x, y]),
+                radius=barrier_radius
+            )
+            self.static_obstacles.append(obstacle)
+
+    def _generate_u_shaped_trap(self):
+        """Generate a U-shaped obstacle with opening on one side."""
+        # U placed in center, goal inside the U
+        center_x = self.width / 2
+        center_y = self.height / 2
+
+        # Three walls forming U shape
+        # Left vertical wall
+        obstacle_left = StaticObstacle(
+            position=np.array([center_x - 1.5, center_y]),
+            radius=2.0
+        )
+        # Bottom horizontal wall
+        obstacle_bottom = StaticObstacle(
+            position=np.array([center_x, center_y - 1.5]),
+            radius=1.5
+        )
+        # Right vertical wall
+        obstacle_right = StaticObstacle(
+            position=np.array([center_x + 1.5, center_y]),
+            radius=2.0
+        )
+
+        self.static_obstacles.extend([obstacle_left, obstacle_bottom, obstacle_right])
+
+    def _generate_chained_corridors(self):
+        """Generate multiple alternating obstacles that force zig-zag navigation."""
+        # Alternating barriers on left and right, forcing the robot to weave
+        num_pairs = 3
+        spacing = self.width / (num_pairs + 1)
+
+        for i in range(num_pairs):
+            if i % 2 == 0:
+                # Barrier on the left
+                x = spacing * (i + 1)
+                y = self.height / 2
+                obstacle = StaticObstacle(
+                    position=np.array([x, y]),
+                    radius=2.0
+                )
+            else:
+                # Barrier on the right
+                x = spacing * (i + 1)
+                y = self.height / 2
+                obstacle = StaticObstacle(
+                    position=np.array([x, y]),
+                    radius=2.0
+                )
+            self.static_obstacles.append(obstacle)
+
+    def _generate_cluttered_blocked(self):
+        """Generate random clutter but guarantee straight-line is blocked."""
+        # Add 6-8 random obstacles
+        num_obstacles = self.rng.randint(6, 9)
+        for _ in range(num_obstacles):
+            x = self.rng.uniform(1.5, self.width - 1.5)
+            y = self.rng.uniform(1.5, self.height - 1.5)
+            radius = self.rng.uniform(0.5, 1.0)
+            obstacle = StaticObstacle(
+                position=np.array([x, y]),
+                radius=radius
+            )
+            self.static_obstacles.append(obstacle)
+
+    def is_straight_line_blocked(self, start: np.ndarray, goal: np.ndarray) -> bool:
+        """
+        Check if the straight-line path from start to goal is blocked by any obstacle.
+
+        Used to guarantee that a detour is required in hard scenarios.
+        """
+        # Check multiple points along the straight line
+        num_checks = 10
+        for i in range(num_checks + 1):
+            t = i / num_checks
+            x = start[0] + t * (goal[0] - start[0])
+            y = start[1] + t * (goal[1] - start[1])
+            if self.check_collision(np.array([x, y]), robot_radius=0.5):
+                return True
+        return False
+
     def _generate_dynamic_obstacles(self, num_obstacles: int):
         """Generate random dynamic obstacles."""
         for _ in range(num_obstacles):

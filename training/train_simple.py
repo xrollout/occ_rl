@@ -366,7 +366,7 @@ def main():
     print(f"Config saved to: {config_path}")
 
     # Import and create environment
-    from occupancy_grid_rl.envs import OccupancyGridEnv
+    from envs import OccupancyGridEnv
 
     env_config = {
         "world_width": 10.0,

@@ -312,7 +312,7 @@ def train_ppo(config: PPOConfig, pretrained_ckpt_path: Optional[str] = None):
     # Load pretrained weights if provided
     if pretrained_ckpt_path is not None:
         print(f"Loading pretrained checkpoint from: {pretrained_ckpt_path}")
-        ckpt = torch.load(pretrained_ckpt_path, map_location=device)
+        ckpt = torch.load(pretrained_ckpt_path, map_location=device, weights_only=False)
         policy.load_state_dict(ckpt['policy_state_dict'])
         print(f"Successfully loaded pretrained weights")
 
