@@ -1,0 +1,34 @@
+{
+  "config": {
+    "baseline_path": "/home/xpeng/Documents/robot/xrollout/projects/rl/checkpoints/ppo_baseline_hard/final_model.pt",
+    "experiment_path": "/home/xpeng/Documents/robot/xrollout/projects/rl/checkpoints/ppo_llm_hard_7eps/final_model.pt",
+    "num_episodes": 50,
+    "world_size": 10.0,
+    "num_static_obstacles": 5,
+    "num_dynamic_obstacles": 0,
+    "max_episode_steps": 200,
+    "seed": 42
+  },
+  "baseline": {
+    "success_rate": 0.0,
+    "collision_rate": 0.14,
+    "avg_episode_length": 183.1,
+    "avg_episode_reward": 9.014526238247607,
+    "std_episode_reward": 9.822444040113607,
+    "avg_distance_traveled": 8.864535541466894
+  },
+  "experiment": {
+    "success_rate": 0.04,
+    "collision_rate": 0.64,
+    "avg_episode_length": 124.34,
+    "avg_episode_reward": 12.499360766616817,
+    "std_episode_reward": 29.398678467317662,
+    "avg_distance_traveled": 7.492938903875285
+  },
+  "difference": {
+    "success_rate": 0.04,
+    "collision_rate": 0.5,
+    "avg_episode_length": -58.75999999999999,
+    "avg_episode_reward": 3.484834528369211
+  }
+}

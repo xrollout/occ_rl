@@ -9,7 +9,7 @@ Final Curriculum Learning Implementation
 """
 
 import os, sys, torch, numpy as np
-sys.path.insert(0, '/Users/bobinding/Documents/robot/xrollout')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from envs import OccupancyGridEnv
 from training.train_ppo_custom import (
     ActorCriticPolicy, collect_rollouts, compute_gae
@@ -20,20 +20,28 @@ import torch.nn as nn
 def evaluate(env, policy, n_episodes=20):
     """Quick evaluation."""
     successes = 0
+    total_reward = 0.0
     for ep in range(n_episodes):
         obs, _ = env.reset(seed=ep + 10000)
         done = False
         steps = 0
+        episode_reward = 0.0
         while not done and steps < 500:
             obs_tensor = {k: torch.FloatTensor(v).unsqueeze(0) for k, v in obs.items()}
             with torch.no_grad():
                 action, _, _ = policy.get_action(obs_tensor, deterministic=True)
-            obs, _, terminated, truncated, info = env.step(action[0])
+            obs, reward, terminated, truncated, info = env.step(action[0])
             done = terminated or truncated
+            episode_reward += reward
             steps += 1
+        total_reward += episode_reward
         if info.get('goal_reached', False):
             successes += 1
-    return successes / n_episodes
+    return {
+        'success_rate': successes / n_episodes,
+        'successes': successes,
+        'mean_reward': total_reward / n_episodes
+    }
 
 def train_phase(env, policy, optimizer, n_steps, batch_size, n_epochs, device, total_timesteps_target):
     """Train for one phase."""

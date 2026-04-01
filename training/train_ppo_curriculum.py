@@ -29,8 +29,8 @@ from torch.distributions import Normal
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from occupancy_grid_rl.envs import OccupancyGridEnv
-from occupancy_grid_rl.training.train_ppo_custom import (
+from envs import OccupancyGridEnv
+from training.train_ppo_custom import (
     PPOConfig, ActorCriticPolicy, compute_gae, collect_rollouts
 )
 

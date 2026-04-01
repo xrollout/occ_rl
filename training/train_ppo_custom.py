@@ -40,6 +40,7 @@ class PPOConfig:
     num_static_obstacles: int = 3
     num_dynamic_obstacles: int = 1
     max_episode_steps: int = 500
+    hard_scenario: bool = False
 
     # Training
     total_timesteps: int = 500000
@@ -304,6 +305,7 @@ def train_ppo(config: PPOConfig, pretrained_ckpt_path: Optional[str] = None):
         num_dynamic_obstacles=config.num_dynamic_obstacles,
         max_episode_steps=config.max_episode_steps,
         random_seed=config.seed,
+        hard_scenario=config.hard_scenario,
     )
 
     # Create policy
@@ -481,6 +483,16 @@ def main():
     parser.add_argument('--output-dir', type=str, default='./ppo_training_output', help='Output directory')
     parser.add_argument('--pretrained-ckpt', type=str, default=None,
                         help='Path to pretrained checkpoint (from behavior cloning) to initialize from')
+    parser.add_argument('--hard-scenario', action='store_true',
+                        help='Use hard scenarios with obstacles requiring detouring')
+    parser.add_argument('--world-size', type=float, default=10.0,
+                        help='World size in meters')
+    parser.add_argument('--num-static-obstacles', type=int, default=5,
+                        help='Number of static obstacles')
+    parser.add_argument('--num-dynamic-obstacles', type=int, default=0,
+                        help='Number of dynamic obstacles')
+    parser.add_argument('--max-episode-steps', type=int, default=200,
+                        help='Maximum steps per episode')
 
     args = parser.parse_args()
 
@@ -498,6 +510,11 @@ def main():
         vf_coef=args.vf_coef,
         seed=args.seed,
         output_dir=args.output_dir,
+        hard_scenario=args.hard_scenario,
+        world_size=args.world_size,
+        num_static_obstacles=args.num_static_obstacles,
+        num_dynamic_obstacles=args.num_dynamic_obstacles,
+        max_episode_steps=args.max_episode_steps,
     )
 
     # Train
